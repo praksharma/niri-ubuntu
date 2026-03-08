@@ -29,15 +29,26 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential \
             devscripts \
             debhelper \
+            build-essential \
+            fakeroot \
             dput \
             gnupg \
             dpkg-dev \
-            curl \
-            xz-utils \
-            cargo
+            cargo \
+            libudev-dev \
+            libwayland-dev \
+            libseat-dev \
+            libglib2.0-dev \
+            libclang-dev \
+            libpipewire-0.3-dev \
+            libcairo2-dev \
+            libpango1.0-dev \
+            libdisplay-info-dev \
+            libinput-dev \
+            libgbm-dev \
+            libxkbcommon-dev
 
       - name: Import GPG key
         run: |
