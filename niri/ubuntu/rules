@@ -1,6 +1,7 @@
 #!/usr/bin/make -f
 
 export CARGO_HOME = $(CURDIR)/.cargo
+export CARGO_TARGET_DIR = $(CURDIR)/target
 NCPU := $(shell nproc)
 
 DEB_VERSION := $(shell dpkg-parsechangelog -S Version)

@@ -1,0 +1,86 @@
+name: Build and upload niri to Launchpad PPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Upstream niri version"
+        required: true
+        default: "25.11"
+
+jobs:
+  upload-ppa:
+    runs-on: ubuntu-latest
+
+    env:
+      PACKAGE_NAME: niri
+      UPSTREAM_VERSION: ${{ github.event.inputs.version }}
+      UBUNTU_SERIES: noble
+      PPA_NAME: ubuntu-niri
+      PPA_OWNER: praksharma
+      GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            devscripts \
+            debhelper \
+            dput \
+            gnupg \
+            dpkg-dev \
+            curl \
+            xz-utils \
+            cargo
+
+      - name: Import GPG key
+        run: |
+          export GNUPGHOME="$(mktemp -d)"
+          echo "allow-loopback-pinentry" >> "$GNUPGHOME/gpg-agent.conf"
+          echo "pinentry-mode loopback" >> "$GNUPGHOME/gpg.conf"
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          gpg --batch --list-secret-keys --keyid-format LONG
+
+      - name: Update changelog version
+        run: |
+          sed -i "1s/^niri (.*/niri (${UPSTREAM_VERSION}ppa1) ${UBUNTU_SERIES}; urgency=medium/" debian/changelog
+          head -n 5 debian/changelog
+
+      - name: Download upstream source
+        run: |
+          curl -L \
+            -o ${PACKAGE_NAME}-${UPSTREAM_VERSION}.tar.gz \
+            https://github.com/YaLTeR/niri/archive/refs/tags/v${UPSTREAM_VERSION}.tar.gz
+          tar -xzf ${PACKAGE_NAME}-${UPSTREAM_VERSION}.tar.gz
+
+      - name: Vendor cargo dependencies
+        run: |
+          cd ${PACKAGE_NAME}-${UPSTREAM_VERSION}
+          mkdir -p .cargo
+          cargo vendor vendor > .cargo/config.toml
+          test -d vendor
+
+      - name: Copy Debian packaging
+        run: |
+          mkdir -p ${PACKAGE_NAME}-${UPSTREAM_VERSION}/debian
+          cp -r debian/* ${PACKAGE_NAME}-${UPSTREAM_VERSION}/debian/
+
+      - name: Build source package
+        env:
+          DEBEMAIL: 70601302+praksharma@users.noreply.github.com
+          DEBFULLNAME: Prakhar
+        run: |
+          cd ${PACKAGE_NAME}-${UPSTREAM_VERSION}
+          debuild -S -sa \
+            -k"${GPG_KEY_ID}" \
+            --no-lintian
+
+      - name: Upload to Launchpad PPA
+        run: |
+          dput ppa:${PPA_OWNER}/${PPA_NAME} ./*_source.changes
