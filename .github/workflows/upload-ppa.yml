@@ -78,8 +78,7 @@ jobs:
         run: |
           cd ${PACKAGE_NAME}-${UPSTREAM_VERSION}
           debuild -S -sa \
-            -k"${GPG_KEY_ID}" \
-            --no-lintian
+            -k"${GPG_KEY_ID}"
 
       - name: Upload to Launchpad PPA
         run: |
