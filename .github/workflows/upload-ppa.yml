@@ -52,11 +52,13 @@ jobs:
 
       - name: Import GPG key
         run: |
-          export GNUPGHOME="$(mktemp -d)"
-          echo "allow-loopback-pinentry" >> "$GNUPGHOME/gpg-agent.conf"
-          echo "pinentry-mode loopback" >> "$GNUPGHOME/gpg.conf"
+          export GNUPGHOME=$(mktemp -d)
+
+          echo "allow-loopback-pinentry" > $GNUPGHOME/gpg-agent.conf
+          echo "pinentry-mode loopback" > $GNUPGHOME/gpg.conf
+
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
-          gpg --batch --list-secret-keys --keyid-format LONG
+          gpg --list-secret-keys --keyid-format LONG
 
       - name: Update changelog version
         run: |
@@ -88,8 +90,17 @@ jobs:
           DEBFULLNAME: Prakhar
         run: |
           cd ${PACKAGE_NAME}-${UPSTREAM_VERSION}
+
+          export GNUPGHOME=$(ls -d /tmp/tmp*)
+
           debuild -S -sa \
-            -k"${GPG_KEY_ID}"
+            -k"${GPG_KEY_ID}" \
+            --no-sign
+
+          debsign \
+            -k"${GPG_KEY_ID}" \
+            -p"gpg --batch --yes --pinentry-mode loopback --passphrase '${GPG_PASSPHRASE}'" \
+            ../*_source.changes
 
       - name: Upload to Launchpad PPA
         run: |
