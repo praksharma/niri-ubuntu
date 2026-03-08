@@ -1,0 +1,31 @@
+#!/usr/bin/make -f
+
+export CARGO_HOME = $(CURDIR)/.cargo
+NCPU := $(shell nproc)
+
+DEB_VERSION := $(shell dpkg-parsechangelog -S Version)
+UPSTREAM_VERSION := $(shell echo $(DEB_VERSION) | sed 's/-[^-]*$$//')
+BASE_VERSION := $(shell echo $(UPSTREAM_VERSION) | sed 's/ppa[0-9]*$$//')
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	test -d niri-$(BASE_VERSION) || (echo "ERROR: niri-$(BASE_VERSION) source directory not found!" && exit 1)
+
+	for checksum in niri-$(BASE_VERSION)/vendor/*/.cargo-checksum.json; do \
+		if [ -f "$$checksum" ]; then \
+			pkg=$$(cat "$$checksum" | grep -o '"package":"[^"]*"' | cut -d'"' -f4); \
+			echo "{\"files\":{},\"package\":\"$$pkg\"}" > "$$checksum"; \
+		fi; \
+	done
+
+	cd niri-$(BASE_VERSION) && cargo build --offline --release -j$(NCPU)
+
+override_dh_auto_install:
+	install -Dm755 niri-$(BASE_VERSION)/target/release/niri debian/niri/usr/bin/niri
+	install -Dm755 niri-$(BASE_VERSION)/resources/niri-session debian/niri/usr/bin/niri-session
+	install -Dm644 niri-$(BASE_VERSION)/resources/niri.service debian/niri/usr/lib/systemd/user/niri.service
+	install -Dm644 niri-$(BASE_VERSION)/resources/niri-shutdown.target debian/niri/usr/lib/systemd/user/niri-shutdown.target
+	install -Dm644 niri-$(BASE_VERSION)/resources/niri.desktop debian/niri/usr/share/wayland-sessions/niri.desktop
+	install -Dm644 niri-$(BASE_VERSION)/resources/niri-portals.conf debian/niri/usr/share/xdg-desktop-portal/niri-portals.conf

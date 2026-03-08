@@ -1,0 +1,36 @@
+Source: niri
+Section: x11
+Priority: optional
+Maintainer: Prakhar <70601302+praksharma@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13),
+               cargo,
+               libudev-dev,
+               libwayland-dev,
+               libseat-dev,
+               libglib2.0-dev,
+               libclang-dev,
+               libpipewire-0.3-dev,
+               libcairo2-dev,
+               libpango1.0-dev,
+               libdisplay-info-dev,
+               libinput-dev,
+               libgbm-dev,
+               libxkbcommon-dev
+Standards-Version: 4.6.2
+Homepage: https://github.com/YaLTeR/niri
+Vcs-Browser: https://github.com/YaLTeR/niri
+
+Package: niri
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         libdisplay-info2,
+         libseat1,
+         xwayland-satellite
+Recommends: alacritty,
+            fuzzel,
+            gnome-keyring,
+            policykit-1-gnome,
+            xdg-desktop-portal-gnome,
+            xdg-desktop-portal-gtk
+Description: A scrollable-tiling Wayland compositor.
