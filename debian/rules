@@ -24,7 +24,7 @@ override_dh_auto_build:
 	done
 
 	cd niri-$(BASE_VERSION) && \
-		RUSTC=rustc-1.80 cargo-1.80 build --frozen --offline --release --features default -j$(NCPU)
+		RUSTC=rustc-1.80 cargo-1.80 build --offline --release --features default -j$(NCPU)
 	cd niri-$(BASE_VERSION) && \
 		for shell in bash fish zsh; do \
 			./target/release/niri completions $$shell > $$shell-completions; \
