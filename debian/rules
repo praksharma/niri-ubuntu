@@ -13,6 +13,8 @@ BASE_VERSION := $(shell echo $(UPSTREAM_VERSION) | sed 's/ppa[0-9]*$$//')
 
 override_dh_auto_build:
 	test -d niri-$(BASE_VERSION) || (echo "ERROR: niri-$(BASE_VERSION) source directory not found!" && exit 1)
+	mkdir -p $(CURDIR)/.cargo-bin
+	ln -sf /usr/bin/rustc-1.80 $(CURDIR)/.cargo-bin/rustc
 
 	# dpkg-source omits files such as .gitignore from native source archives.
 	# Clear per-file vendor checksums while preserving each crate package hash.
@@ -24,7 +26,8 @@ override_dh_auto_build:
 	done
 
 	cd niri-$(BASE_VERSION) && \
-		RUSTC=rustc-1.80 cargo-1.80 build --offline --release --features default -j$(NCPU)
+		PATH="$(CURDIR)/.cargo-bin:$(PATH)" RUSTC=rustc \
+		cargo-1.80 build --offline --release --features default -j$(NCPU)
 	cd niri-$(BASE_VERSION) && \
 		for shell in bash fish zsh; do \
 			./target/release/niri completions $$shell > $$shell-completions; \
@@ -44,7 +47,7 @@ override_dh_auto_install:
 	install -Dm644 niri-$(BASE_VERSION)/zsh-completions debian/niri/usr/share/zsh/site-functions/_niri
 
 override_dh_auto_clean:
-	rm -rf .cargo
+	rm -rf .cargo .cargo-bin
 	if [ -d niri-$(BASE_VERSION) ]; then \
 		cd niri-$(BASE_VERSION) && RUSTC=rustc-1.80 cargo-1.80 clean 2>/dev/null || true; \
 	fi
