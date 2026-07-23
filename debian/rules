@@ -13,6 +13,16 @@ BASE_VERSION := $(shell echo $(UPSTREAM_VERSION) | sed 's/ppa[0-9]*$$//')
 
 override_dh_auto_build:
 	test -d niri-$(BASE_VERSION) || (echo "ERROR: niri-$(BASE_VERSION) source directory not found!" && exit 1)
+
+	# dpkg-source omits files such as .gitignore from native source archives.
+	# Clear per-file vendor checksums while preserving each crate package hash.
+	for checksum in niri-$(BASE_VERSION)/vendor/*/.cargo-checksum.json; do \
+		if [ -f "$$checksum" ]; then \
+			pkg=$$(grep -o '"package":"[^"]*"' "$$checksum" | cut -d'"' -f4); \
+			printf '{"files":{},"package":"%s"}\n' "$$pkg" > "$$checksum"; \
+		fi; \
+	done
+
 	cd niri-$(BASE_VERSION) && \
 		RUSTC=rustc-1.80 cargo-1.80 build --frozen --offline --release --features default -j$(NCPU)
 	cd niri-$(BASE_VERSION) && \
