@@ -1,5 +1,6 @@
 niri (25.11ppa1) noble; urgency=medium
 
-  * Initial Ubuntu 24.04 PPA build.
+  * Package Niri 25.11 for Ubuntu 24.04 LTS.
+  * Build offline with the upstream vendored dependency archive.
 
- -- Prakhar <70601302+praksharma@users.noreply.github.com>  Sat, 8 Mar 2026 18:00:00 +0000
+ -- Prakhar <70601302+praksharma@users.noreply.github.com>  Thu, 23 Jul 2026 12:00:00 +0100

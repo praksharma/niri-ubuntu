@@ -1,7 +1,7 @@
 #!/usr/bin/make -f
 
+export DH_VERBOSE = 1
 export CARGO_HOME = $(CURDIR)/.cargo
-export CARGO_TARGET_DIR = $(CURDIR)/target
 NCPU := $(shell nproc)
 
 DEB_VERSION := $(shell dpkg-parsechangelog -S Version)
@@ -13,15 +13,12 @@ BASE_VERSION := $(shell echo $(UPSTREAM_VERSION) | sed 's/ppa[0-9]*$$//')
 
 override_dh_auto_build:
 	test -d niri-$(BASE_VERSION) || (echo "ERROR: niri-$(BASE_VERSION) source directory not found!" && exit 1)
-
-	for checksum in niri-$(BASE_VERSION)/vendor/*/.cargo-checksum.json; do \
-		if [ -f "$$checksum" ]; then \
-			pkg=$$(cat "$$checksum" | grep -o '"package":"[^"]*"' | cut -d'"' -f4); \
-			echo "{\"files\":{},\"package\":\"$$pkg\"}" > "$$checksum"; \
-		fi; \
-	done
-
-	cd niri-$(BASE_VERSION) && cargo build --offline --release -j$(NCPU)
+	cd niri-$(BASE_VERSION) && \
+		RUSTC=rustc-1.80 cargo-1.80 build --frozen --offline --release --features default -j$(NCPU)
+	cd niri-$(BASE_VERSION) && \
+		for shell in bash fish zsh; do \
+			./target/release/niri completions $$shell > $$shell-completions; \
+		done
 
 override_dh_auto_install:
 	install -Dm755 niri-$(BASE_VERSION)/target/release/niri debian/niri/usr/bin/niri
@@ -30,3 +27,18 @@ override_dh_auto_install:
 	install -Dm644 niri-$(BASE_VERSION)/resources/niri-shutdown.target debian/niri/usr/lib/systemd/user/niri-shutdown.target
 	install -Dm644 niri-$(BASE_VERSION)/resources/niri.desktop debian/niri/usr/share/wayland-sessions/niri.desktop
 	install -Dm644 niri-$(BASE_VERSION)/resources/niri-portals.conf debian/niri/usr/share/xdg-desktop-portal/niri-portals.conf
+	install -Dm644 niri-$(BASE_VERSION)/resources/default-config.kdl debian/niri/usr/share/doc/niri/default-config.kdl
+	install -Dm644 niri-$(BASE_VERSION)/README.md debian/niri/usr/share/doc/niri/README.md
+	install -Dm644 niri-$(BASE_VERSION)/bash-completions debian/niri/usr/share/bash-completion/completions/niri
+	install -Dm644 niri-$(BASE_VERSION)/fish-completions debian/niri/usr/share/fish/vendor_completions.d/niri.fish
+	install -Dm644 niri-$(BASE_VERSION)/zsh-completions debian/niri/usr/share/zsh/site-functions/_niri
+
+override_dh_auto_clean:
+	rm -rf .cargo
+	if [ -d niri-$(BASE_VERSION) ]; then \
+		cd niri-$(BASE_VERSION) && RUSTC=rustc-1.80 cargo-1.80 clean 2>/dev/null || true; \
+	fi
+	dh_auto_clean
+
+override_dh_clean:
+	dh_clean -XCargo.toml.orig -X.orig

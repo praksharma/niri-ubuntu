@@ -4,104 +4,111 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Upstream niri version"
+        description: "Upstream Niri version"
         required: true
         default: "25.11"
+      revision:
+        description: "PPA revision number"
+        required: true
+        default: "1"
 
 jobs:
   upload-ppa:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     env:
       PACKAGE_NAME: niri
       UPSTREAM_VERSION: ${{ github.event.inputs.version }}
+      PPA_REVISION: ${{ github.event.inputs.revision }}
       UBUNTU_SERIES: noble
       PPA_NAME: ubuntu-niri
       PPA_OWNER: praksharma
       GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
-      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install build tools
+      - name: Validate inputs
+        run: |
+          [[ "$UPSTREAM_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]
+          [[ "$PPA_REVISION" =~ ^[1-9][0-9]*$ ]]
+
+      - name: Install source package tools
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            devscripts \
-            debhelper \
             build-essential \
-            fakeroot \
-            dput \
-            gnupg \
+            debhelper \
+            devscripts \
             dpkg-dev \
-            cargo \
-            libudev-dev \
-            libwayland-dev \
-            libseat-dev \
-            libglib2.0-dev \
-            libclang-dev \
-            libpipewire-0.3-dev \
-            libcairo2-dev \
-            libpango1.0-dev \
-            libdisplay-info-dev \
-            libinput-dev \
-            libgbm-dev \
-            libxkbcommon-dev
+            dput \
+            fakeroot \
+            gnupg \
+            curl \
+            xz-utils
 
       - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
-          export GNUPGHOME=$(mktemp -d)
-
-          echo "allow-loopback-pinentry" > $GNUPGHOME/gpg-agent.conf
-          echo "pinentry-mode loopback" > $GNUPGHOME/gpg.conf
-
-          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
           gpg --list-secret-keys --keyid-format LONG
 
-      - name: Update changelog version
+      - name: Set package version
         run: |
-          sed -i "1s/^niri (.*/niri (${UPSTREAM_VERSION}ppa1) ${UBUNTU_SERIES}; urgency=medium/" debian/changelog
+          PACKAGE_VERSION="${UPSTREAM_VERSION}ppa${PPA_REVISION}"
+          sed -i "1s/^niri (.*/niri (${PACKAGE_VERSION}) ${UBUNTU_SERIES}; urgency=medium/" debian/changelog
           head -n 5 debian/changelog
 
-      - name: Download upstream source
+      - name: Prepare upstream source
         run: |
-          curl -L \
-            -o ${PACKAGE_NAME}-${UPSTREAM_VERSION}.tar.gz \
-            https://github.com/YaLTeR/niri/archive/refs/tags/v${UPSTREAM_VERSION}.tar.gz
-          tar -xzf ${PACKAGE_NAME}-${UPSTREAM_VERSION}.tar.gz
+          curl -L --fail \
+            -o "$RUNNER_TEMP/${PACKAGE_NAME}-${UPSTREAM_VERSION}.tar.gz" \
+            "https://github.com/niri-wm/niri/archive/refs/tags/v${UPSTREAM_VERSION}.tar.gz"
+          tar -xzf "$RUNNER_TEMP/${PACKAGE_NAME}-${UPSTREAM_VERSION}.tar.gz"
 
-      - name: Vendor cargo dependencies
+          curl -L --fail \
+            -o "$RUNNER_TEMP/${PACKAGE_NAME}-${UPSTREAM_VERSION}-vendored-dependencies.tar.xz" \
+            "https://github.com/niri-wm/niri/releases/download/v${UPSTREAM_VERSION}/${PACKAGE_NAME}-${UPSTREAM_VERSION}-vendored-dependencies.tar.xz"
+          tar -xJf "$RUNNER_TEMP/${PACKAGE_NAME}-${UPSTREAM_VERSION}-vendored-dependencies.tar.xz" \
+            -C "${PACKAGE_NAME}-${UPSTREAM_VERSION}"
+
+          mkdir -p "${PACKAGE_NAME}-${UPSTREAM_VERSION}/.cargo"
+          cat > "${PACKAGE_NAME}-${UPSTREAM_VERSION}/.cargo/config.toml" <<'EOF'
+          [source.crates-io]
+          replace-with = "vendored-sources"
+
+          [source."git+https://github.com/Smithay/smithay.git"]
+          git = "https://github.com/Smithay/smithay.git"
+          replace-with = "vendored-sources"
+
+          [source.vendored-sources]
+          directory = "vendor"
+          EOF
+
+          test -f "${PACKAGE_NAME}-${UPSTREAM_VERSION}/Cargo.lock"
+          test -d "${PACKAGE_NAME}-${UPSTREAM_VERSION}/vendor"
+
+      - name: Build unsigned source package
         run: |
-          cd ${PACKAGE_NAME}-${UPSTREAM_VERSION}
-          mkdir -p .cargo
-          cargo vendor vendor > .cargo/config.toml
-          test -d vendor
+          debuild -S -sa -us -uc -d
 
-      - name: Copy Debian packaging
-        run: |
-          mkdir -p ${PACKAGE_NAME}-${UPSTREAM_VERSION}/debian
-          cp -r debian/* ${PACKAGE_NAME}-${UPSTREAM_VERSION}/debian/
-
-      - name: Build source package
+      - name: Sign source package
         env:
-          DEBEMAIL: 70601302+praksharma@users.noreply.github.com
-          DEBFULLNAME: Prakhar
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
-          cd ${PACKAGE_NAME}-${UPSTREAM_VERSION}
-
-          export GNUPGHOME=$(ls -d /tmp/tmp*)
-
-          debuild -S -sa \
-            -k"${GPG_KEY_ID}" \
-            --no-sign
-
+          cat > "$RUNNER_TEMP/gpg-wrapper" <<'EOF'
+          #!/bin/sh
+          exec gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "$GPG_PASSPHRASE" "$@"
+          EOF
+          chmod 700 "$RUNNER_TEMP/gpg-wrapper"
           debsign \
             -k"${GPG_KEY_ID}" \
-            -p"gpg --batch --yes --pinentry-mode loopback --passphrase '${GPG_PASSPHRASE}'" \
-            ../*_source.changes
+            -p"$RUNNER_TEMP/gpg-wrapper" \
+            ../${PACKAGE_NAME}_*_source.changes
 
-      - name: Upload to Launchpad PPA
+      - name: Upload source package to Launchpad
         run: |
-          dput ppa:${PPA_OWNER}/${PPA_NAME} ./*_source.changes
+          dput "ppa:${PPA_OWNER}/${PPA_NAME}" ../${PACKAGE_NAME}_*_source.changes
